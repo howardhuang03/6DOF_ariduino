@@ -5,16 +5,17 @@
 
 #define TX_PIN 8
 #define RX_PIN 9
-#define threshold 5
+#define THRESHOLD 5
 
 struct FitkneeInfo {
+    unsigned long ts;
     GY80_single_scaled acc;
     GY80_single_scaled gyro;
 };
 
 GY80 sensor = GY80();     // Create GY80 instance
 SoftwareSerial BT(RX_PIN, TX_PIN);  // Setup BT transmit & receive pin
-StaticJsonBuffer<200> jsonBuffer;
+
 unsigned long time;
 unsigned long count;
 
@@ -70,13 +71,33 @@ void SamplingRate(float diff) {
     count = 0;
 }
 
+void JsonCreator(FitkneeInfo info) {
+    StaticJsonBuffer<128> jsonBuffer;
+    JsonObject &root = jsonBuffer.createObject();
+
+    root["ts"] = info.ts;
+    // Handle acc data
+    JsonArray& acc = root.createNestedArray("acc");
+    acc.add(float_with_n_digits(info.acc.x, 6));
+    acc.add(float_with_n_digits(info.acc.y, 6));
+    acc.add(float_with_n_digits(info.acc.z, 6));
+    // Handle gyro data
+    JsonArray& gyro = root.createNestedArray("gyro");
+    gyro.add(float_with_n_digits(info.gyro.x, 6));
+    gyro.add(float_with_n_digits(info.gyro.y, 6));
+    gyro.add(float_with_n_digits(info.gyro.z, 6));
+
+    root.printTo(BT);
+}
+
 void loop()
 {
+    FitkneeInfo info;
     char val_input;
     unsigned long current = millis();
-    FitkneeInfo info;
 
     // Get values from acc & gyro sensors
+    info.ts = current;
     info.acc = sensor.a_read_scaled();
     info.gyro = sensor.g_read_scaled();
     count++;
@@ -84,9 +105,12 @@ void loop()
     // Print out acc & gyro values
     //SensorPrint(current, info.acc, info.gyro);
 
+    // Create Json message
+    JsonCreator(info);
+
     // Calculate sampling rate
     float diff = (current - time) / 1000; 
-    if (diff > threshold) { 
+    if (diff > THRESHOLD) {
         SamplingRate(diff);
     }
 
