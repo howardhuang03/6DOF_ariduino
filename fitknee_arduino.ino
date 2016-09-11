@@ -1,11 +1,16 @@
 #include <Wire.h>
 #include <GY80.h>
+#include <RingBuf.h>
 #include <ArduinoJson.h>
 #include <SoftwareSerial.h>
 
-#define TX_PIN 8
-#define RX_PIN 9
+#define SERIAL_SPEED 9600
+#define BLUETOOTH_SPEED 115200
+#define TX_PIN 10
+#define RX_PIN 11
 #define THRESHOLD 5
+#define RINGBUFSIZE 4
+#define JBUFFERSIZE (90 * RINGBUFSIZE)
 
 struct FitkneeInfo {
     unsigned long ts;
@@ -14,10 +19,11 @@ struct FitkneeInfo {
 };
 
 GY80 sensor = GY80();     // Create GY80 instance
-SoftwareSerial BT(RX_PIN, TX_PIN);  // Setup BT transmit & receive pin
+SoftwareSerial BT(TX_PIN, RX_PIN);  // Setup BT transmit & receive pin
 
 unsigned long time;
 unsigned long count;
+RingBuf *buf;
 
 void setup()
 {
@@ -30,8 +36,8 @@ void setup()
 
     // Initialize another serial port for BT communication
     // 38400 for HC-05
-    Serial.println("Initial 9 BT serial");
-    BT.begin(38400);
+    Serial.println("Initial BT serial");
+    BT.begin(115200);
     
     Serial.println("External module ready!!");
 
@@ -71,22 +77,31 @@ void SamplingRate(float diff) {
     count = 0;
 }
 
-void JsonCreator(FitkneeInfo info) {
-    StaticJsonBuffer<128> jsonBuffer;
+void JsonCreator() {
+    StaticJsonBuffer<JBUFFERSIZE> jsonBuffer;
     JsonObject &root = jsonBuffer.createObject();
+    int len = buf -> numElements(buf);
+    FitkneeInfo *info;
 
-    root["ts"] = info.ts;
-    // Handle acc data
-    JsonArray& acc = root.createNestedArray("acc");
-    acc.add(float_with_n_digits(info.acc.x, 6));
-    acc.add(float_with_n_digits(info.acc.y, 6));
-    acc.add(float_with_n_digits(info.acc.z, 6));
-    // Handle gyro data
-    JsonArray& gyro = root.createNestedArray("gyro");
-    gyro.add(float_with_n_digits(info.gyro.x, 6));
-    gyro.add(float_with_n_digits(info.gyro.y, 6));
-    gyro.add(float_with_n_digits(info.gyro.z, 6));
+    root["size"] = len;
 
+    JsonArray& data = root.createNestedArray("data");
+    for (int i = 0; i < len; i++) {
+        info = (FitkneeInfo *)buf -> peek(buf, i);
+        // Handle timestamp
+        data.add(info->ts);
+        // Handle acc data
+        data.add(float_with_n_digits(info -> acc.x, 4));
+        data.add(float_with_n_digits(info -> acc.y, 4));
+        data.add(float_with_n_digits(info -> acc.z, 4));
+        // Handle gyro data
+        data.add(float_with_n_digits(info -> gyro.x, 4));
+        data.add(float_with_n_digits(info -> gyro.y, 4));
+        data.add(float_with_n_digits(info -> gyro.z, 4));
+    }
+
+    // Send json message to BT module
+    //root.prettyPrintTo(Serial);
     root.printTo(BT);
 }
 
@@ -105,8 +120,19 @@ void loop()
     // Print out acc & gyro values
     //SensorPrint(current, info.acc, info.gyro);
 
-    // Create Json message
-    JsonCreator(info);
+    if (buf == NULL) {
+        // Initialize Ring buffer for FitkneeInfo type
+        buf = RingBuf_new(sizeof(FitkneeInfo), RINGBUFSIZE);
+    }
+
+    buf -> add(buf, &info);
+    if (buf->isFull(buf)) {
+        // Write data to BT side and reset buffer
+        JsonCreator();
+        // Delete RingBuf object
+        RingBuf_delete(buf);
+        buf = NULL;
+    }
 
     // Calculate sampling rate
     float diff = (current - time) / 1000; 
@@ -114,18 +140,13 @@ void loop()
         SamplingRate(diff);
     }
 
-    // Print out BT data to serial
+    // Read BT data and write to serial
     if (BT.available()) {
-        val_input = BT.read();
-        Serial.print(val_input);
+        Serial.write(BT.read());
     }
 
-    // Send serial data to BT
+    // Read serial data and send to BT
     if (Serial.available()) {
-        val_input = Serial.read();
-        Serial.println(val_input);
-        BT.write(val_input);
+        BT.write(Serial.read());
     }
-
-    //delay(1);        // delay in between reads for stability
 }
