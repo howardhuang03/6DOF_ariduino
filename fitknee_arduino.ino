@@ -28,16 +28,16 @@ RingBuf *buf;
 void setup()
 {
     // Initialize serial communication at 115200 bits per second:
-    Serial.begin(9600);
+    Serial.begin(SERIAL_SPEED);
 
     // Initialize sensors
     Serial.println("Initial 9 DOF sensor");
     sensor.begin();
 
     // Initialize another serial port for BT communication
-    // 38400 for HC-05
+    // 38400 for HC-05 AT mode
     Serial.println("Initial BT serial");
-    BT.begin(115200);
+    BT.begin(BLUETOOTH_SPEED);
     
     Serial.println("External module ready!!");
 
