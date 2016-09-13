@@ -9,7 +9,7 @@
 #define TX_PIN 10
 #define RX_PIN 11
 #define THRESHOLD 5
-#define RINGBUFSIZE 4
+#define RINGBUFSIZE 8
 #define JBUFFERSIZE (90 * RINGBUFSIZE)
 
 struct FitkneeInfo {
@@ -72,7 +72,7 @@ void SamplingRate(float diff) {
     Serial.print("Sampling count: ");
     Serial.print(count);
     Serial.print(", Sampling rate: ");
-    Serial.println(rate, 6);
+    Serial.println(rate, 4);
     time = millis();
     count = 0;
 }
@@ -135,7 +135,7 @@ void loop()
     }
 
     // Calculate sampling rate
-    float diff = (current - time) / 1000; 
+    float diff = (current - time) / 1000.0;
     if (diff > THRESHOLD) {
         SamplingRate(diff);
     }
